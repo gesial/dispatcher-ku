@@ -1,58 +1,79 @@
-'use client';
+"use client";
 
-import { useState, useRef } from 'react';
+import { useState } from "react";
 
-export default function ChatPage() {
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
-  const [input, setInput] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export default function Home() {
+  const [messages, setMessages] = useState<any[]>([]);
+  const [input, setInput] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [commandStarted, setCommandStarted] = useState(false);
 
-  const sendMessage = async (text: string, imageData?: string) => {
-    const newMessages = [...messages, { role: 'user', content: text || "Uploaded an image" }];
-    setMessages(newMessages);
+  const sendMessage = async () => {
+    const formData = new FormData();
+    formData.append("message", input);
+    formData.append("commandStarted", commandStarted.toString());
 
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      body: JSON.stringify({ messages: newMessages, data: { image: imageData } }),
+    if (file) {
+      formData.append("image", file);
+    }
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      body: formData,
     });
 
-    const result = await response.json();
-    setMessages((prev) => [...prev, result]);
-  };
+    const data = await res.json();
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = (reader.result as string).split(',')[1];
-        sendMessage('', base64);
-      };
-      reader.readAsDataURL(file);
+    setMessages([
+      ...messages,
+      { role: "user", content: input || "📷 Image uploaded" },
+      { role: "bot", content: data.reply },
+    ]);
+
+    if (input === "/belfood") {
+      setCommandStarted(true);
     }
+
+    setInput("");
+    setFile(null);
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100 p-4 max-w-md mx-auto">
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4">
-        {messages.map((m, i) => (
-          <div key={i} className={`p-3 rounded-lg ${m.role === 'user' ? 'bg-blue-500 text-white self-end ml-10' : 'bg-white text-black self-start mr-10 shadow'}`}>
-            {m.content}
+    <div className="flex flex-col h-screen bg-gray-100">
+      <div className="flex-1 overflow-auto p-4 space-y-3">
+        {messages.map((msg, index) => (
+          <div
+            key={index}
+            className={`p-3 rounded-lg max-w-xs ${
+              msg.role === "user"
+                ? "bg-blue-500 text-white self-end ml-auto"
+                : "bg-white"
+            }`}
+          >
+            {msg.content}
           </div>
         ))}
       </div>
 
-      <div className="flex gap-2 bg-white p-2 rounded-xl shadow">
-        <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-gray-200 rounded-lg">📷</button>
-        <input type="file" ref={fileInputRef} hidden onChange={handleFileUpload} accept="image/*" />
-        <input 
-          className="flex-1 outline-none" 
-          placeholder="Type /ping or /belfood..." 
+      <div className="p-3 bg-white flex gap-2">
+        <input
+          type="text"
+          className="flex-1 border rounded p-2"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && (sendMessage(input), setInput(''))}
+          placeholder="Type message..."
         />
-        <button onClick={() => { sendMessage(input); setInput(''); }} className="text-blue-500 font-bold">Send</button>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+        />
+        <button
+          onClick={sendMessage}
+          className="bg-blue-500 text-white px-4 rounded"
+        >
+          Send
+        </button>
       </div>
     </div>
   );

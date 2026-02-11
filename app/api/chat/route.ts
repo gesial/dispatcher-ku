@@ -1,48 +1,54 @@
-import { google } from '@ai-sdk/google';
-import { generateText } from 'ai';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function POST(req: Request) {
-  const { messages, data } = await req.json();
-  const lastMessage = messages[messages.length - 1];
-  const userText = lastMessage.content.trim().toLowerCase();
-  const hasImage = data?.image; // We'll pass base64 image data from the frontend
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-  // 1. Logic for "/ping"
-  if (userText === '/ping') {
-    return new Response(JSON.stringify({ role: 'assistant', content: 'pong!' }));
+export async function POST(req: NextRequest) {
+  const formData = await req.formData();
+
+  const message = formData.get("message") as string | null;
+  const image = formData.get("image") as File | null;
+  const commandStarted = formData.get("commandStarted") === "true";
+
+  // /ping
+  if (message === "/ping") {
+    return NextResponse.json({ reply: "pong!" });
   }
 
-  // 2 & 4. Logic for "/belfood" and Image Uploads
-  if (userText === '/belfood') {
-    return new Response(JSON.stringify({ role: 'assistant', content: 'Ready! Please upload a photo for identification.' }));
+  // If image uploaded before /belfood
+  if (image && !commandStarted) {
+    return NextResponse.json({
+      reply: 'Please send "/belfood" first before uploading image.',
+    });
   }
 
-  // If user uploads an image...
-  if (hasImage) {
-    // Check if the previous message was "/belfood" (Requirement 4)
-    const wasBelfoodTriggered = messages.some((m: any) => m.content.toLowerCase() === '/belfood');
-    
-    if (!wasBelfoodTriggered) {
-      return new Response(JSON.stringify({ role: 'assistant', content: 'You need to send "/belfood" first to proceed.' }));
-    }
+  // If /belfood + image
+  if (image && commandStarted) {
+    const bytes = await image.arrayBuffer();
+    const base64 = Buffer.from(bytes).toString("base64");
 
-    // Process with Gemini (Requirement 2)
-    const { text } = await generateText({
-      model: google('gemini-1.5-flash'),
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Identify what is in this image clearly and concisely.' },
-            { type: 'image', image: data.image }, // Base64 string
-          ],
-        },
-      ],
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
     });
 
-    return new Response(JSON.stringify({ role: 'assistant', content: text }));
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: image.type,
+          data: base64,
+        },
+      },
+      "Identify this image clearly and concisely.",
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+
+    return NextResponse.json({ reply: text });
   }
 
-  // 3. Logic for invalid inputs
-  return new Response(JSON.stringify({ role: 'assistant', content: 'Input is invalid. Use /belfood or /ping.' }));
+  return NextResponse.json({
+    reply:
+      'Invalid input. Available commands:\n/ping\n/belfood (then upload image)',
+  });
 }
